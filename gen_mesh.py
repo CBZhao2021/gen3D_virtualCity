@@ -174,7 +174,7 @@ class genBuilding:
         return self.mesh_building
 
     def set_building_storey(self):
-        low, high = self.low_storey * 3, self.low_storey * 3
+        low, high = self.low_storey * 3, self.high_storey * 3
 
         for tmp_mesh in self.mesh_building:
             rand_height = random.uniform(low, high)
