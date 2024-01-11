@@ -127,6 +127,42 @@ class genBuilding:
 
         return mesh
 
+    def gen_mesh_building_lod1(self, shp_polys, limit):
+        self.mesh_building = []
+        self.poly_building = []
+
+        shp_l = len(shp_polys)
+        for i in tqdm(range(shp_l)):
+            shp_poly = shp_polys[i]
+            if limit.intersection(shp_poly).any():
+                continue
+            self.poly_building.append(shp_poly)
+
+            exterior_coords = np.array(shp_poly.exterior.coords)
+            vertices_btm = np.hstack((exterior_coords, np.zeros((exterior_coords.shape[0], 1))))
+
+            triangles = earcut(exterior_coords.flatten(), dim=2)
+            faces_btm = np.reshape(triangles, (-1, 3))
+
+            l_btm=len(vertices_btm)
+            vertices_top = vertices_btm+[0.,0.,3.]
+            faces_top = faces_btm+[l_btm,l_btm,l_btm]
+
+            faces_side=[]
+            for j in range(l_btm-1):
+                faces_side+=[[j,j+l_btm,j+l_btm+1],[j,j+1,j+l_btm+1]]
+            faces_side+=[[l_btm-1,l_btm*2-1,l_btm],[l_btm-1,0,l_btm]]
+            faces_side=np.array(faces_side)
+
+            vertices=np.vstack([vertices_btm,vertices_top])
+            faces=np.vstack([faces_btm,faces_top,faces_side])
+            tmp_mesh = trimesh.Trimesh(vertices=vertices, faces=faces)
+            self.mesh_building.append(tmp_mesh)
+        self.building_limit = gpd.array.GeometryArray(np.array(self.poly_building))
+
+        return self.mesh_building
+
+
     def gen_mesh_building_lod2(self, shp_polys, probabilities, limit=None, visualize=False):
         shp_l = len(shp_polys)
 
@@ -220,6 +256,9 @@ class genBuilding:
         return cityModel
 
     def gen_building_run(self, building_lod=2, limit=None, visualize=False, save_gml=True, gml_root=''):
+        if building_lod == 1:
+            self.gen_mesh_building_lod1(self.roi_building, limit)
+            self.set_building_storey()
         if building_lod == 2:
             self.gen_mesh_building_lod2(self.roi_building, self.probabilities, limit, visualize)
             if self.low_storey and self.high_storey:
