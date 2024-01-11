@@ -362,8 +362,6 @@ class genRoad:
             if not tele_pole_point[x].within(self.road_limit).any():
                 self.mesh_device.append(tmp_mesh)
 
-
-
     def gen_device_lod2(self, shp):
         self.mesh_device = []
 
@@ -490,7 +488,7 @@ class genRoad:
             self.gen_mesh_road_sub(self.roi_road, self.width, self.width_sub)
         if device_lod == 1:
             self.gen_device_lod1(self.roi_road)
-        if device_lod == 2:
+        elif device_lod == 2:
             self.gen_device_lod2(self.roi_road)
         if save_gml:
             road_gml = self.create_citygml_road(self.mesh_road)
@@ -515,7 +513,43 @@ class genVegetation:
         self.low_ratio = low_ratio
         self.high_ratio = high_ratio
 
-    def gen_tree_mesh(self, limit_road, limit_bdg, x_min, y_min, width=200., height=200., dense=1000):
+    def gen_tree_mesh_lod1(self, limit_road, limit_bdg, x_min, y_min, width=200., height=200., dense=200):
+        self.mesh_tree = []
+        self.roi_rect = box(x_min, y_min, x_min + width, y_min + height)
+
+        limit_bdg = limit_bdg.buffer(3.)
+        limit_road = limit_road.buffer(3.)
+
+        tar_xy = np.array([[random.uniform(x_min, x_min + width) for _ in range(dense)],
+                           [random.uniform(y_min, y_min + width) for _ in range(dense)]]).T
+        tmp_idx = []
+        for i in range(len(tar_xy)):
+            if Point(tar_xy[i]).within(limit_road).any() or Point(tar_xy[i]).within(limit_bdg).any():
+                continue
+            else:
+                tmp_idx.append(i)
+        tar_xy = tar_xy[tmp_idx]
+
+        high_num = int(len(tar_xy) * self.high_ratio / (self.high_ratio + self.low_ratio))
+
+        for i in range(high_num):
+            tree_poly=Point(tar_xy[i]).buffer(random.uniform(1.,3.))
+            tree_height=random.uniform(6.,12.)
+
+            vertices, faces = polygon_to_mesh_3D(tree_poly,tree_height)
+            tmp_mesh = trimesh.Trimesh(vertices=vertices, faces=faces)
+            self.mesh_tree.append(tmp_mesh)
+
+        for i in range(high_num,len(tar_xy)):
+            tree_poly=Point(tar_xy[i]).buffer(random.uniform(0.5,2.))
+            tree_height=random.uniform(2.,6.)
+
+            vertices, faces = polygon_to_mesh_3D(tree_poly,tree_height)
+            tmp_mesh = trimesh.Trimesh(vertices=vertices, faces=faces)
+            self.mesh_tree.append(tmp_mesh)
+
+
+    def gen_tree_mesh_lod2(self, limit_road, limit_bdg, x_min, y_min, width=200., height=200., dense=200):
         self.mesh_tree = []
         self.roi_rect = box(x_min, y_min, x_min + width, y_min + height)
 
@@ -591,10 +625,12 @@ class genVegetation:
 
     def gen_vege_run(self, limit_road, limit_bdg, x_min, y_min, width=200., height=200., dense=None, lod_level=2,
                      save_gml=True, gml_root=''):
-        if lod_level == 2:
-            if not dense:
-                dense = random.randint(50, 200)
-            self.gen_tree_mesh(limit_road, limit_bdg, x_min, y_min, width, height, dense)
+        if not dense:
+            dense = random.randint(50, 200)
+        if lod_level == 1:
+            self.gen_tree_mesh_lod1(limit_road, limit_bdg, x_min, y_min, width, height, dense)
+        elif lod_level == 2:
+            self.gen_tree_mesh_lod2(limit_road, limit_bdg, x_min, y_min, width, height, dense)
 
         if save_gml:
             vege_gml = self.create_citygml_vegetation(self.mesh_tree)
