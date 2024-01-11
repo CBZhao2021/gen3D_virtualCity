@@ -138,24 +138,7 @@ class genBuilding:
                 continue
             self.poly_building.append(shp_poly)
 
-            exterior_coords = np.array(shp_poly.exterior.coords)
-            vertices_btm = np.hstack((exterior_coords, np.zeros((exterior_coords.shape[0], 1))))
-
-            triangles = earcut(exterior_coords.flatten(), dim=2)
-            faces_btm = np.reshape(triangles, (-1, 3))
-
-            l_btm=len(vertices_btm)
-            vertices_top = vertices_btm+[0.,0.,3.]
-            faces_top = faces_btm+[l_btm,l_btm,l_btm]
-
-            faces_side=[]
-            for j in range(l_btm-1):
-                faces_side+=[[j,j+l_btm,j+l_btm+1],[j,j+1,j+l_btm+1]]
-            faces_side+=[[l_btm-1,l_btm*2-1,l_btm],[l_btm-1,0,l_btm]]
-            faces_side=np.array(faces_side)
-
-            vertices=np.vstack([vertices_btm,vertices_top])
-            faces=np.vstack([faces_btm,faces_top,faces_side])
+            vertices,faces=polygon_to_mesh_3D(shp_poly)
             tmp_mesh = trimesh.Trimesh(vertices=vertices, faces=faces)
             self.mesh_building.append(tmp_mesh)
         self.building_limit = gpd.array.GeometryArray(np.array(self.poly_building))
@@ -346,7 +329,42 @@ class genRoad:
         length = line.length
         return [line.interpolate(distance) for distance in range(0, int(length), interval)]
 
-    def gen_device(self, shp):
+    def gen_device_lod1(self, shp):
+        self.mesh_device = []
+
+        left_sub = []
+        for tmp_road in shp:
+            if isinstance(tmp_road, LineString):
+                left_sub.append(
+                    tmp_road.parallel_offset(self.width * (1 + self.width_sub * 2 + 0.5), 'left'))
+            elif isinstance(tmp_road, MultiLineString):
+                for tmp_road_ in tmp_road.geoms:
+                    left_sub.append(
+                        tmp_road_.parallel_offset(self.width * (1 + self.width_sub * 2 + 0.5), 'left'))
+        self.road_limit = shp.buffer(self.width * (1 + self.width_sub * 2. + 0.5))
+        tele_pole_point = []
+        for tmp_road in left_sub:
+            tele_pole_point += self.generate_poles_along_line(tmp_road, 20)
+
+        for x in range(len(tele_pole_point)):
+            half_side = 0.1
+            tele_pole_point_xy = [tele_pole_point[x].x, tele_pole_point[x].y]
+            tele_pole_square_coords = [
+                (tele_pole_point_xy[0] - half_side, tele_pole_point_xy[1] - half_side),
+                (tele_pole_point_xy[0] - half_side, tele_pole_point_xy[1] + half_side),
+                (tele_pole_point_xy[0] + half_side, tele_pole_point_xy[1] + half_side),
+                (tele_pole_point_xy[0] + half_side, tele_pole_point_xy[1] - half_side)
+            ]
+
+            tele_pole_square = Polygon(tele_pole_square_coords)
+            vertices, faces = polygon_to_mesh_3D(tele_pole_square)
+            tmp_mesh = trimesh.Trimesh(vertices=vertices, faces=faces)
+            if not tele_pole_point[x].within(self.road_limit).any():
+                self.mesh_device.append(tmp_mesh)
+
+
+
+    def gen_device_lod2(self, shp):
         self.mesh_device = []
 
         tele_pole_mesh = trimesh.load(os.path.join(r'data\src_3d\lod3frn\electric_pole',
@@ -470,8 +488,10 @@ class genRoad:
         if road_lod == 1:
             self.gen_mesh_road(self.roi_road, self.width)
             self.gen_mesh_road_sub(self.roi_road, self.width, self.width_sub)
+        if device_lod == 1:
+            self.gen_device_lod1(self.roi_road)
         if device_lod == 2:
-            self.gen_device(self.roi_road)
+            self.gen_device_lod2(self.roi_road)
         if save_gml:
             road_gml = self.create_citygml_road(self.mesh_road)
             save_citygml(road_gml, os.path.join(gml_root, 'road.gml'))
@@ -667,6 +687,27 @@ def polygon_to_mesh(polygon):
     res_mesh = trimesh.Trimesh(vertices=vertices, faces=faces)
     return res_mesh
 
+def polygon_to_mesh_3D(polygon, height=3.):
+    exterior_coords = np.array(polygon.exterior.coords)
+    vertices_btm = np.hstack((exterior_coords, np.zeros((exterior_coords.shape[0], 1))))
+
+    triangles = earcut(exterior_coords.flatten(), dim=2)
+    faces_btm = np.reshape(triangles, (-1, 3))
+
+    l_btm = len(vertices_btm)
+    vertices_top = vertices_btm + [0., 0., height]
+    faces_top = faces_btm + [l_btm, l_btm, l_btm]
+
+    faces_side = []
+    for j in range(l_btm - 1):
+        faces_side += [[j, j + l_btm, j + l_btm + 1], [j, j + 1, j + l_btm + 1]]
+    faces_side += [[l_btm - 1, l_btm * 2 - 1, l_btm], [l_btm - 1, 0, l_btm]]
+    faces_side = np.array(faces_side)
+
+    vertices = np.vstack([vertices_btm, vertices_top])
+    faces = np.vstack([faces_btm, faces_top, faces_side])
+
+    return vertices,faces
 
 def save_citygml(root, file_name):
     tree = etree.ElementTree(root)
