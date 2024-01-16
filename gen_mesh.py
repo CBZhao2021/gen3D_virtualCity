@@ -26,6 +26,8 @@ class genRelief:
         self.height_limit = height_limit
 
         self.relief_src_path = glob.glob(os.path.join(self.relief_src_root, '*.jpg'))
+        self.points_relief = None
+        self.mesh_relief = []
 
     def gen_mesh_relief_lod1(self, x_min, y_min, width=200., height=200.):
         l_path = len(self.relief_src_path)
@@ -86,10 +88,10 @@ class genRelief:
     def gen_relief_run(self, x_min, y_min, width=200., height=200., relief_lod=1, save_gml=True, gml_root=''):
         if relief_lod == 1:
             self.gen_mesh_relief_lod1(x_min, y_min, width, height)
-        if save_gml:
+        if save_gml and relief_lod:
             relief_gml = self.create_citygml_relief([self.mesh_relief])
             save_citygml(relief_gml, os.path.join(gml_root, 'relief.gml'))
-        return self.mesh_relief
+            return self.mesh_relief
 
 
 class genBuilding:
@@ -923,6 +925,8 @@ def arg():
     parser.add_argument("--telegraph_pole_ratio", help="telegraph pole ratio", type=float)
     parser.add_argument("--traffic_light_ratio", help="traffic light ratio", type=float)
 
+    parser.add_argument("--lod_relief", help="relief lod", type=int)
+
     parser.add_argument("--output", help="Output file name", type=str)
 
     args = parser.parse_args()
@@ -958,6 +962,8 @@ def main():
     telegraph_pole_ratio = args.telegraph_pole_ratio
     traffic_light_ratio = args.traffic_light_ratio
 
+    lod_relief = args.lod_relief
+
     output_root = args.output
 
     random.seed(random_seed)
@@ -978,7 +984,8 @@ def main():
     x_rand = random.uniform(10500., 14250.)
     y_rand = random.uniform(-13000., -20750.)
 
-    mesh_relief = gen_relief.gen_relief_run(x_rand, y_rand, gml_root=output_root)
+    gen_relief.gen_relief_run(x_rand, y_rand, relief_lod=lod_relief, gml_root=output_root)
+    mesh_relief = gen_relief.mesh_relief
     points_relief = gen_relief.points_relief
 
     gen_road.crop_road_lineStr(x_rand, y_rand)
