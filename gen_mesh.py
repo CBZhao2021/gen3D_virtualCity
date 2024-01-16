@@ -1,3 +1,5 @@
+import glob
+import cv2
 import os
 import trimesh
 import math
@@ -12,11 +14,87 @@ from lxml import etree
 from earcut.earcut import earcut
 from shapely.geometry import MultiPolygon, Polygon, MultiLineString, LineString, Point, box
 from shapely.affinity import rotate, scale, translate
+from scipy.spatial import Delaunay
+
+
+class genRelief:
+    def __init__(self,
+                 reilef_src_root=r'data\src_2d\dem\crop_resize',
+                 height_limit=5.,
+                 **kwargs):
+        self.relief_src_root = reilef_src_root
+        self.height_limit = height_limit
+
+        self.relief_src_path = glob.glob(os.path.join(self.relief_src_root, '*.jpg'))
+
+    def gen_mesh_relief_lod1(self, x_min, y_min, width=200., height=200.):
+        l_path = len(self.relief_src_path)
+        rand_idx = random.randint(0, l_path - 1)
+        rand_dem_path = self.relief_src_path[rand_idx]
+
+        img = cv2.imread(rand_dem_path, 0)
+
+        h_img, w_img = img.shape
+        x, y = np.meshgrid(np.arange(w_img), np.arange(h_img))
+        coordinates = np.stack((x_min + x * width / (w_img - 1), y_min + y * height / (h_img - 1)), axis=-1)
+        points = np.concatenate([coordinates, img[..., None] / 255. * self.height_limit], axis=2)
+        points_reshape = np.reshape(points, (-1, 3))
+
+        points_2d = points_reshape[:, :2]
+        tri = Delaunay(points_2d)
+        faces = tri.simplices
+
+        self.mesh_relief = trimesh.Trimesh(vertices=points_reshape, faces=faces)
+        self.points_relief = points
+        return self.mesh_relief
+
+    def create_citygml_relief(self, relief):
+        nsmap = {
+            'core': "http://www.opengis.net/citygml/2.0",
+            'dem': "http://www.opengis.net/citygml/relief/2.0",
+            'gml': "http://www.opengis.net/gml"
+        }
+
+        cityModel = etree.Element("{http://www.opengis.net/citygml/2.0}CityModel", nsmap=nsmap)
+
+        for relief_data in relief:
+            vertices, faces = relief_data.vertices, relief_data.faces
+
+            # 添加地形要素
+            relief_member = etree.SubElement(cityModel, "{http://www.opengis.net/citygml/2.0}cityObjectMember")
+            reliefFeature = etree.SubElement(relief_member, "{http://www.opengis.net/citygml/relief/2.0}ReliefFeature")
+
+            # 定义 TINRelief
+            tinRelief = etree.SubElement(reliefFeature, "{http://www.opengis.net/citygml/relief/2.0}tinRelief")
+            lod1MultiSurface = etree.SubElement(tinRelief,
+                                                "{http://www.opengis.net/citygml/relief/2.0}lod1MultiSurface")
+            multiSurface = etree.SubElement(lod1MultiSurface, "{http://www.opengis.net/gml}MultiSurface")
+
+            for face in faces:
+                surfaceMember = etree.SubElement(multiSurface, "{http://www.opengis.net/gml}surfaceMember")
+                polygon = etree.SubElement(surfaceMember, "{http://www.opengis.net/gml}Polygon")
+                exterior = etree.SubElement(polygon, "{http://www.opengis.net/gml}exterior")
+                linearRing = etree.SubElement(exterior, "{http://www.opengis.net/gml}LinearRing")
+                posList = etree.SubElement(linearRing, "{http://www.opengis.net/gml}posList")
+
+                coords = ' '.join(
+                    ['{} {} {}'.format(vertices[idx][0], vertices[idx][1], vertices[idx][2]) for idx in face])
+                posList.text = coords
+
+        return cityModel
+
+    def gen_relief_run(self, x_min, y_min, width=200., height=200., relief_lod=1, save_gml=True, gml_root=''):
+        if relief_lod == 1:
+            self.gen_mesh_relief_lod1(x_min, y_min, width, height)
+        if save_gml:
+            relief_gml = self.create_citygml_relief([self.mesh_relief])
+            save_citygml(relief_gml, os.path.join(gml_root, 'relief.gml'))
+        return self.mesh_relief
 
 
 class genBuilding:
     def __init__(self,
-                 bdg_src_path=r'data\src_2d\tatemono_filter1.shp',
+                 bdg_src_path=r'data\src_2d\shp\tatemono_filter1.shp',
                  bdg_obj_label_path=r'data\src_3d\merged_filter1.csv',
                  bdg_obj_root=r'data\src_3d\obj\\',
                  probabilities=[1., 0., 0., 0., 0., 0., 0.],
@@ -127,24 +205,23 @@ class genBuilding:
 
         return mesh
 
-    def gen_mesh_building_lod1(self, shp_polys, limit):
+    def gen_mesh_building_lod1(self, shp_polys, limit=None):
         self.mesh_building = []
         self.poly_building = []
 
         shp_l = len(shp_polys)
         for i in tqdm(range(shp_l)):
             shp_poly = shp_polys[i]
-            if limit.intersection(shp_poly).any():
+            if (limit is not None) and limit.intersection(shp_poly).any():
                 continue
             self.poly_building.append(shp_poly)
 
-            vertices,faces=polygon_to_mesh_3D(shp_poly)
+            vertices, faces = polygon_to_mesh_3D(shp_poly)
             tmp_mesh = trimesh.Trimesh(vertices=vertices, faces=faces)
             self.mesh_building.append(tmp_mesh)
         self.building_limit = gpd.array.GeometryArray(np.array(self.poly_building))
 
         return self.mesh_building
-
 
     def gen_mesh_building_lod2(self, shp_polys, probabilities, limit=None, visualize=False):
         shp_l = len(shp_polys)
@@ -205,6 +282,16 @@ class genBuilding:
             mesh_point[:, 2][mesh_point_z > (min_z + 1.)] += h_trans
             tmp_mesh.vertices = mesh_point
 
+    def add_relief(self, points_relief):
+        z_points_interpolate = relief_interpolate(self.mesh_building, points_relief)
+        if (z_points_interpolate is None):
+            return
+
+        for i, tmp_mesh in enumerate(self.mesh_building):
+            tmp_vertices = tmp_mesh.vertices
+            tmp_vertices[:, 2] += np.min(z_points_interpolate[i])
+            tmp_mesh.vertices = tmp_vertices
+
     def create_citygml_building(self, buildings):
         nsmap = {
             'core': "http://www.opengis.net/citygml/2.0",
@@ -238,7 +325,8 @@ class genBuilding:
 
         return cityModel
 
-    def gen_building_run(self, building_lod=2, limit=None, visualize=False, save_gml=True, gml_root=''):
+    def gen_building_run(self, building_lod=2, limit=None, points_relief=None, visualize=False, save_gml=True,
+                         gml_root=''):
         if building_lod == 1:
             self.gen_mesh_building_lod1(self.roi_building, limit)
             self.set_building_storey()
@@ -246,6 +334,7 @@ class genBuilding:
             self.gen_mesh_building_lod2(self.roi_building, self.probabilities, limit, visualize)
             if self.low_storey and self.high_storey:
                 self.set_building_storey()
+        self.add_relief(points_relief)
         if save_gml:
             building_gml = self.create_citygml_building(self.mesh_building)
             save_citygml(building_gml, os.path.join(gml_root, 'building.gml'))
@@ -255,7 +344,7 @@ class genBuilding:
 
 class genRoad:
     def __init__(self,
-                 road_src_path=r'data\src_2d\edges.shp',
+                 road_src_path=r'data\src_2d\shp\edges.shp',
                  width=2.,
                  width_sub=0.1,
                  light_ratio=0.1,
@@ -482,7 +571,17 @@ class genRoad:
 
         return cityModel
 
-    def gen_road_run(self, road_lod=1, device_lod=2, save_gml=True, gml_root=''):
+    def add_relief(self, points_relief):
+        z_points_interpolate = relief_interpolate(self.mesh_road, points_relief)
+        if (z_points_interpolate is None):
+            return
+
+        for i, tmp_mesh in enumerate(self.mesh_road):
+            tmp_vertices = tmp_mesh.vertices
+            tmp_vertices[:, 2] += z_points_interpolate[i] + 0.01
+            tmp_mesh.vertices = tmp_vertices
+
+    def gen_road_run(self, road_lod=1, device_lod=2, points_relief=None, save_gml=True, gml_root=''):
         if road_lod == 1:
             self.gen_mesh_road(self.roi_road, self.width)
             self.gen_mesh_road_sub(self.roi_road, self.width, self.width_sub)
@@ -490,12 +589,15 @@ class genRoad:
             self.gen_device_lod1(self.roi_road)
         elif device_lod == 2:
             self.gen_device_lod2(self.roi_road)
+        road_ori=self.mesh_road.copy()
+        self.mesh_road += self.mesh_device
+        self.add_relief(points_relief)
         if save_gml:
-            road_gml = self.create_citygml_road(self.mesh_road)
+            road_gml = self.create_citygml_road(road_ori)
             save_citygml(road_gml, os.path.join(gml_root, 'road.gml'))
             device_gml = self.create_citygml_cityfurniture(self.mesh_device)
             save_citygml(device_gml, os.path.join(gml_root, 'device.gml'))
-        self.mesh_road += self.mesh_device
+
         return self.mesh_road
 
 
@@ -533,21 +635,20 @@ class genVegetation:
         high_num = int(len(tar_xy) * self.high_ratio / (self.high_ratio + self.low_ratio))
 
         for i in range(high_num):
-            tree_poly=Point(tar_xy[i]).buffer(random.uniform(1.,3.))
-            tree_height=random.uniform(6.,12.)
+            tree_poly = Point(tar_xy[i]).buffer(random.uniform(1., 3.))
+            tree_height = random.uniform(6., 12.)
 
-            vertices, faces = polygon_to_mesh_3D(tree_poly,tree_height)
+            vertices, faces = polygon_to_mesh_3D(tree_poly, tree_height)
             tmp_mesh = trimesh.Trimesh(vertices=vertices, faces=faces)
             self.mesh_tree.append(tmp_mesh)
 
-        for i in range(high_num,len(tar_xy)):
-            tree_poly=Point(tar_xy[i]).buffer(random.uniform(0.5,2.))
-            tree_height=random.uniform(2.,6.)
+        for i in range(high_num, len(tar_xy)):
+            tree_poly = Point(tar_xy[i]).buffer(random.uniform(0.5, 2.))
+            tree_height = random.uniform(2., 6.)
 
-            vertices, faces = polygon_to_mesh_3D(tree_poly,tree_height)
+            vertices, faces = polygon_to_mesh_3D(tree_poly, tree_height)
             tmp_mesh = trimesh.Trimesh(vertices=vertices, faces=faces)
             self.mesh_tree.append(tmp_mesh)
-
 
     def gen_tree_mesh_lod2(self, limit_road, limit_bdg, x_min, y_min, width=200., height=200., dense=200):
         self.mesh_tree = []
@@ -591,6 +692,16 @@ class genVegetation:
                          -tmp_mesh_zmin]
             self.mesh_tree.append(tmp_mesh.apply_translation(tmp_trans))
 
+    def add_relief(self, points_relief):
+        z_points_interpolate = relief_interpolate(self.mesh_tree, points_relief)
+        if (z_points_interpolate is None):
+            return
+
+        for i, tmp_mesh in enumerate(self.mesh_tree):
+            tmp_vertices = tmp_mesh.vertices
+            tmp_vertices[:, 2] += z_points_interpolate[i] + 0.01
+            tmp_mesh.vertices = tmp_vertices
+
     def create_citygml_vegetation(self, vegetation):
         nsmap = {
             'core': "http://www.opengis.net/citygml/2.0",
@@ -623,7 +734,7 @@ class genVegetation:
 
         return cityModel
 
-    def gen_vege_run(self, limit_road, limit_bdg, x_min, y_min, width=200., height=200., dense=None, lod_level=2,
+    def gen_vege_run(self, limit_road, limit_bdg, x_min, y_min, width=200., height=200., points_relief=None, dense=None, lod_level=2,
                      save_gml=True, gml_root=''):
         if not dense:
             dense = random.randint(50, 200)
@@ -631,10 +742,10 @@ class genVegetation:
             self.gen_tree_mesh_lod1(limit_road, limit_bdg, x_min, y_min, width, height, dense)
         elif lod_level == 2:
             self.gen_tree_mesh_lod2(limit_road, limit_bdg, x_min, y_min, width, height, dense)
-
+        self.add_relief(points_relief)
         if save_gml:
             vege_gml = self.create_citygml_vegetation(self.mesh_tree)
-            save_citygml(vege_gml, os.path.join(gml_root,'vegetation.gml'))
+            save_citygml(vege_gml, os.path.join(gml_root, 'vegetation.gml'))
 
         return self.mesh_tree
 
@@ -723,6 +834,7 @@ def polygon_to_mesh(polygon):
     res_mesh = trimesh.Trimesh(vertices=vertices, faces=faces)
     return res_mesh
 
+
 def polygon_to_mesh_3D(polygon, height=3.):
     exterior_coords = np.array(polygon.exterior.coords)
     vertices_btm = np.hstack((exterior_coords, np.zeros((exterior_coords.shape[0], 1))))
@@ -743,7 +855,39 @@ def polygon_to_mesh_3D(polygon, height=3.):
     vertices = np.vstack([vertices_btm, vertices_top])
     faces = np.vstack([faces_btm, faces_top, faces_side])
 
-    return vertices,faces
+    return vertices, faces
+
+
+def relief_interpolate(mesh_list, points_relief):
+    if (points_relief is None):
+        return
+    z_points = points_relief[..., 2]
+    xy_start_points = points_relief[0, 0, :2]
+    xy_dif = points_relief[1, 1, :2] - points_relief[0, 0, :2]
+    point_shape = points_relief.shape
+
+    z_points_interpolate = []
+    for tmp_mesh in mesh_list:
+        tmp_vertices = tmp_mesh.vertices
+        tmp_xy_idx = (tmp_vertices[:, :2] - xy_start_points) / xy_dif
+        tmp_xy1 = tmp_xy_idx.astype(int)
+        tmp_xy2 = tmp_xy_idx.astype(int) + 1
+        tmp_xy2[:, 0][tmp_xy2[:, 0] > (point_shape[1] - 1)] = point_shape[1] - 1
+        tmp_xy2[:, 1][tmp_xy2[:, 1] > (point_shape[0] - 1)] = point_shape[0] - 1
+        tmp_dxy = tmp_xy_idx - tmp_xy1
+
+        V11 = z_points[tmp_xy1[:, 1], tmp_xy1[:, 0]]
+        V21 = z_points[tmp_xy1[:, 1], tmp_xy2[:, 0]]
+        V12 = z_points[tmp_xy2[:, 1], tmp_xy1[:, 0]]
+        V22 = z_points[tmp_xy2[:, 1], tmp_xy2[:, 0]]
+
+        tmp_z_points_interpolate = (V11 * (1 - tmp_dxy[:, 0]) * (1 - tmp_dxy[:, 1]) +
+                                    V21 * tmp_dxy[:, 0] * (1 - tmp_dxy[:, 1]) +
+                                    V12 * (1 - tmp_dxy[:, 0]) * tmp_dxy[:, 1] +
+                                    V22 * tmp_dxy[:, 0] * tmp_dxy[:, 1])
+        z_points_interpolate.append(tmp_z_points_interpolate)
+    return z_points_interpolate
+
 
 def save_citygml(root, file_name):
     tree = etree.ElementTree(root)
@@ -824,6 +968,8 @@ def main():
     else:
         road_width = 2.
     width_sub = road_width_sub / road_width_main
+
+    gen_relief = genRelief()
     gen_road = genRoad(width=road_width, width_sub=width_sub, tele_ratio=telegraph_pole_ratio,
                        light_ratio=traffic_light_ratio)
     gen_building = genBuilding(probabilities=probabilities, low_storey=storey_low, high_storey=storey_high)
@@ -832,18 +978,23 @@ def main():
     x_rand = random.uniform(10500., 14250.)
     y_rand = random.uniform(-13000., -20750.)
 
+    mesh_relief = gen_relief.gen_relief_run(x_rand, y_rand, gml_root=output_root)
+    points_relief = gen_relief.points_relief
+
     gen_road.crop_road_lineStr(x_rand, y_rand)
-    mesh_road = gen_road.gen_road_run(road_lod=lod_road, device_lod=lod_device, gml_root=output_root)
+    mesh_road = gen_road.gen_road_run(road_lod=lod_road, device_lod=lod_device, points_relief=points_relief,
+                                      gml_root=output_root)
     road_limit = gen_road.road_limit
 
     gen_building.crop_blg_poly(x_rand, y_rand)
-    mesh_building = gen_building.gen_building_run(building_lod=lod_building, limit=road_limit, gml_root=output_root)
+    mesh_building = gen_building.gen_building_run(building_lod=lod_building, limit=road_limit,
+                                                  points_relief=points_relief, gml_root=output_root)
     bdg_limit = gen_building.building_limit
 
-    mesh_vege = gen_vege.gen_vege_run(road_limit, bdg_limit, x_rand, y_rand, lod_level=lod_vegetation,
-                                      gml_root=output_root)
+    mesh_vege = gen_vege.gen_vege_run(road_limit, bdg_limit, x_rand, y_rand, points_relief=points_relief,
+                                      lod_level=lod_vegetation, gml_root=output_root)
 
-    res = mesh_building + mesh_road + mesh_vege
+    res = mesh_relief + mesh_building + mesh_road + mesh_vege
     combined_mesh = trimesh.util.concatenate(res)
 
     combined_mesh.export(os.path.join(output_root, 'gen_test.obj'))
