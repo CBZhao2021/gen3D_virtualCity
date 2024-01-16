@@ -1004,6 +1004,8 @@ def main():
     res = mesh_relief + mesh_building + mesh_road + mesh_vege
     combined_mesh = trimesh.util.concatenate(res)
 
+    if not os.path.exists(output_root):
+        os.makedirs(output_root)
     combined_mesh.export(os.path.join(output_root, 'gen_test.obj'))
 
 
