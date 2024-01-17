@@ -50,7 +50,8 @@ class genRelief:
         self.points_relief = points
         return self.mesh_relief
 
-    def create_citygml_relief(self, relief):
+    def create_citygml_relief(self, relief, relief_lod=1, srs_name="http://www.opengis.net/def/crs/EPSG/0/30169",
+                              srsDimension="3"):
         nsmap = {
             'core': "http://www.opengis.net/citygml/2.0",
             'dem': "http://www.opengis.net/citygml/relief/2.0",
@@ -62,25 +63,41 @@ class genRelief:
         for relief_data in relief:
             vertices, faces = relief_data.vertices, relief_data.faces
 
-            # 添加地形要素
+            x_max, y_max, z_max = np.max(vertices, axis=0)
+            x_min, y_min, z_min = np.min(vertices, axis=0)
+            boundedBy = etree.SubElement(cityModel, "{http://www.opengis.net/gml}boundedBy")
+            Envelope = etree.SubElement(boundedBy, "{http://www.opengis.net/gml}Envelope", srsName=srs_name,
+                                        srsDimension=srsDimension)
+            lowerCorner = etree.SubElement(Envelope, "{http://www.opengis.net/gml}lowerCorner")
+            upperCorner = etree.SubElement(Envelope, "{http://www.opengis.net/gml}upperCorner")
+            lowerCorner.text = '{} {} {}'.format(x_min, y_min, z_min)
+            upperCorner.text = '{} {} {}'.format(x_max, y_max, z_max)
+
             relief_member = etree.SubElement(cityModel, "{http://www.opengis.net/citygml/2.0}cityObjectMember")
             reliefFeature = etree.SubElement(relief_member, "{http://www.opengis.net/citygml/relief/2.0}ReliefFeature")
 
-            # 定义 TINRelief
-            tinRelief = etree.SubElement(reliefFeature, "{http://www.opengis.net/citygml/relief/2.0}tinRelief")
-            lod1MultiSurface = etree.SubElement(tinRelief,
-                                                "{http://www.opengis.net/citygml/relief/2.0}lod1MultiSurface")
-            multiSurface = etree.SubElement(lod1MultiSurface, "{http://www.opengis.net/gml}MultiSurface")
+            lod1_1 = etree.SubElement(reliefFeature, "{http://www.opengis.net/citygml/relief/2.0}lod")
+            lod1_1.text = str(relief_lod)
+            reliefComponent = etree.SubElement(reliefFeature,
+                                               "{http://www.opengis.net/citygml/relief/2.0}reliefComponent")
+            TINRelief = etree.SubElement(reliefComponent, "{http://www.opengis.net/citygml/relief/2.0}TINRelief")
+            lod1_2 = etree.SubElement(TINRelief, "{http://www.opengis.net/citygml/relief/2.0}lod")
+            lod1_2.text = str(relief_lod)
+            tin = etree.SubElement(TINRelief, "{http://www.opengis.net/citygml/relief/2.0}tin")
+            triangulatedSurface = etree.SubElement(tin, "{http://www.opengis.net/gml}TriangulatedSurface",
+                                                   srsName=srs_name,
+                                                   srsDimension=srsDimension)
+            trianglePatches = etree.SubElement(triangulatedSurface, "{http://www.opengis.net/gml}trianglePatches")
 
             for face in faces:
-                surfaceMember = etree.SubElement(multiSurface, "{http://www.opengis.net/gml}surfaceMember")
-                polygon = etree.SubElement(surfaceMember, "{http://www.opengis.net/gml}Polygon")
+                polygon = etree.SubElement(trianglePatches, "{http://www.opengis.net/gml}Triangle")
                 exterior = etree.SubElement(polygon, "{http://www.opengis.net/gml}exterior")
                 linearRing = etree.SubElement(exterior, "{http://www.opengis.net/gml}LinearRing")
                 posList = etree.SubElement(linearRing, "{http://www.opengis.net/gml}posList")
 
                 coords = ' '.join(
                     ['{} {} {}'.format(vertices[idx][0], vertices[idx][1], vertices[idx][2]) for idx in face])
+                coords += ' {} {} {}'.format(vertices[face[0]][0], vertices[face[0]][1], vertices[face[0]][2])
                 posList.text = coords
 
         return cityModel
@@ -89,7 +106,9 @@ class genRelief:
         if relief_lod == 1:
             self.gen_mesh_relief_lod1(x_min, y_min, width, height)
         if save_gml and relief_lod:
-            relief_gml = self.create_citygml_relief([self.mesh_relief])
+            relief_gml = self.create_citygml_relief([self.mesh_relief], relief_lod=1,
+                                                    srs_name="http://www.opengis.net/def/crs/EPSG/0/30169",
+                                                    srsDimension="3")
             save_citygml(relief_gml, os.path.join(gml_root, 'relief.gml'))
             return self.mesh_relief
 
@@ -294,36 +313,91 @@ class genBuilding:
             tmp_vertices[:, 2] += np.min(z_points_interpolate[i])
             tmp_mesh.vertices = tmp_vertices
 
-    def create_citygml_building(self, buildings):
+    def create_citygml_building(self, buildings, lod=1, srs_name="http://www.opengis.net/def/crs/EPSG/0/30169",
+                                srsDimension="3"):
         nsmap = {
             'core': "http://www.opengis.net/citygml/2.0",
             'bldg': "http://www.opengis.net/citygml/building/2.0",
             'gml': "http://www.opengis.net/gml"
         }
-
         cityModel = etree.Element("{http://www.opengis.net/citygml/2.0}CityModel", nsmap=nsmap)
 
-        for building_data in buildings:
-            vertices, faces = building_data.vertices, building_data.faces
+        total_vertices = []
+        for building in buildings:
+            total_vertices.append(building.vertices)
+        total_vertices = np.vstack(total_vertices)
+        x_max, y_max, z_max = np.max(total_vertices, axis=0)
+        x_min, y_min, z_min = np.min(total_vertices, axis=0)
+        boundedBy = etree.SubElement(cityModel, "{http://www.opengis.net/gml}boundedBy")
+        Envelope = etree.SubElement(boundedBy, "{http://www.opengis.net/gml}Envelope", srsName=srs_name,
+                                    srsDimension=srsDimension)
+        lowerCorner = etree.SubElement(Envelope, "{http://www.opengis.net/gml}lowerCorner")
+        upperCorner = etree.SubElement(Envelope, "{http://www.opengis.net/gml}upperCorner")
+        lowerCorner.text = '{} {} {}'.format(x_min, y_min, z_min)
+        upperCorner.text = '{} {} {}'.format(x_max, y_max, z_max)
 
-            building_member = etree.SubElement(cityModel, "{http://www.opengis.net/citygml/2.0}cityObjectMember")
-            building = etree.SubElement(building_member, "{http://www.opengis.net/citygml/building/2.0}Building")
+        if lod == 1:
+            for building_data in buildings:
+                vertices, faces = building_data.vertices, building_data.faces
 
-            lod1Solid = etree.SubElement(building, "{http://www.opengis.net/citygml/building/2.0}lod1Solid")
-            solid = etree.SubElement(lod1Solid, "{http://www.opengis.net/gml}Solid")
-            exterior = etree.SubElement(solid, "{http://www.opengis.net/gml}exterior")
-            compositeSurface = etree.SubElement(exterior, "{http://www.opengis.net/gml}CompositeSurface")
+                building_member = etree.SubElement(cityModel, "{http://www.opengis.net/citygml/2.0}cityObjectMember")
+                building = etree.SubElement(building_member, "{http://www.opengis.net/citygml/building/2.0}Building")
 
-            for face in faces:
-                surfaceMember = etree.SubElement(compositeSurface, "{http://www.opengis.net/gml}surfaceMember")
-                polygon = etree.SubElement(surfaceMember, "{http://www.opengis.net/gml}Polygon")
-                exterior = etree.SubElement(polygon, "{http://www.opengis.net/gml}exterior")
-                linearRing = etree.SubElement(exterior, "{http://www.opengis.net/gml}LinearRing")
-                posList = etree.SubElement(linearRing, "{http://www.opengis.net/gml}posList")
+                lod1Solid = etree.SubElement(building, "{http://www.opengis.net/citygml/building/2.0}lod1Solid")
+                solid = etree.SubElement(lod1Solid, "{http://www.opengis.net/gml}Solid")
+                exterior = etree.SubElement(solid, "{http://www.opengis.net/gml}exterior")
+                compositeSurface = etree.SubElement(exterior, "{http://www.opengis.net/gml}CompositeSurface")
 
-                coords = ' '.join(
-                    ['{} {} {}'.format(vertices[idx][0], vertices[idx][1], vertices[idx][2]) for idx in face])
-                posList.text = coords
+                for face in faces:
+                    surfaceMember = etree.SubElement(compositeSurface, "{http://www.opengis.net/gml}surfaceMember")
+                    polygon = etree.SubElement(surfaceMember, "{http://www.opengis.net/gml}Polygon")
+                    exterior = etree.SubElement(polygon, "{http://www.opengis.net/gml}exterior")
+                    linearRing = etree.SubElement(exterior, "{http://www.opengis.net/gml}LinearRing")
+                    posList = etree.SubElement(linearRing, "{http://www.opengis.net/gml}posList")
+
+                    coords = ' '.join(
+                        ['{} {} {}'.format(vertices[idx][0], vertices[idx][1], vertices[idx][2]) for idx in face])
+                    coords += ' {} {} {}'.format(vertices[face[0]][0], vertices[face[0]][1], vertices[face[0]][2])
+                    posList.text = coords
+        elif lod == 2:
+            for building_data in buildings:
+                vertices, faces = building_data.vertices, building_data.faces
+                z_min, z_max = np.min(vertices[:, 2]), np.max(vertices[:, 2])
+
+                building_member = etree.SubElement(cityModel, "{http://www.opengis.net/citygml/2.0}cityObjectMember")
+                building = etree.SubElement(building_member, "{http://www.opengis.net/citygml/building/2.0}Building")
+
+                measuredHeight = etree.SubElement(building,
+                                                  "{http://www.opengis.net/citygml/building/2.0}measuredHeight")
+                measuredHeight.text = str(round(z_max - z_min, 2))
+
+                for face in faces:
+                    boundedBy = etree.SubElement(building,
+                                                 "{http://www.opengis.net/citygml/building/2.0}boundedBy")
+                    z_face = vertices[face][:, 2]
+                    if (z_face - z_min < 1.).all():
+                        typeSurface = etree.SubElement(boundedBy,
+                                                       "{http://www.opengis.net/citygml/building/2.0}GroundSurface")
+                    elif (z_face - z_min > 1.).all():
+                        typeSurface = etree.SubElement(boundedBy,
+                                                       "{http://www.opengis.net/citygml/building/2.0}RoofSurface")
+                    else:
+                        typeSurface = etree.SubElement(boundedBy,
+                                                       "{http://www.opengis.net/citygml/building/2.0}WallSurface")
+
+                    lod2MultiSurface = etree.SubElement(typeSurface,
+                                                        "{http://www.opengis.net/citygml/building/2.0}lod2MultiSurface")
+                    MultiSurface = etree.SubElement(lod2MultiSurface, "{http://www.opengis.net/gml}MultiSurface")
+                    surfaceMember = etree.SubElement(MultiSurface, "{http://www.opengis.net/gml}surfaceMember")
+                    polygon = etree.SubElement(surfaceMember, "{http://www.opengis.net/gml}Polygon")
+                    exterior = etree.SubElement(polygon, "{http://www.opengis.net/gml}exterior")
+                    linearRing = etree.SubElement(exterior, "{http://www.opengis.net/gml}LinearRing")
+                    posList = etree.SubElement(linearRing, "{http://www.opengis.net/gml}posList")
+
+                    coords = ' '.join(
+                        ['{} {} {}'.format(vertices[idx][0], vertices[idx][1], vertices[idx][2]) for idx in face])
+                    coords += ' {} {} {}'.format(vertices[face[0]][0], vertices[face[0]][1], vertices[face[0]][2])
+                    posList.text = coords
 
         return cityModel
 
@@ -338,7 +412,7 @@ class genBuilding:
                 self.set_building_storey()
         self.add_relief(points_relief)
         if save_gml:
-            building_gml = self.create_citygml_building(self.mesh_building)
+            building_gml = self.create_citygml_building(self.mesh_building, building_lod)
             save_citygml(building_gml, os.path.join(gml_root, 'building.gml'))
 
         return self.mesh_building
@@ -507,7 +581,8 @@ class genRoad:
 
         self.mesh_device += res_tele_pole + res_traf_light
 
-    def create_citygml_road(self, roads):
+    def create_citygml_road(self, roads, srs_name="http://www.opengis.net/def/crs/EPSG/0/30169",
+                                srsDimension="3"):
         nsmap = {
             'core': "http://www.opengis.net/citygml/2.0",
             'tran': "http://www.opengis.net/citygml/transportation/2.0",
@@ -515,6 +590,20 @@ class genRoad:
         }
 
         cityModel = etree.Element("{http://www.opengis.net/citygml/2.0}CityModel", nsmap=nsmap)
+
+        total_vertices = []
+        for road in roads:
+            total_vertices.append(road.vertices)
+        total_vertices = np.vstack(total_vertices)
+        x_max, y_max, z_max = np.max(total_vertices, axis=0)
+        x_min, y_min, z_min = np.min(total_vertices, axis=0)
+        boundedBy = etree.SubElement(cityModel, "{http://www.opengis.net/gml}boundedBy")
+        Envelope = etree.SubElement(boundedBy, "{http://www.opengis.net/gml}Envelope", srsName=srs_name,
+                                    srsDimension=srsDimension)
+        lowerCorner = etree.SubElement(Envelope, "{http://www.opengis.net/gml}lowerCorner")
+        upperCorner = etree.SubElement(Envelope, "{http://www.opengis.net/gml}upperCorner")
+        lowerCorner.text = '{} {} {}'.format(x_min, y_min, z_min)
+        upperCorner.text = '{} {} {}'.format(x_max, y_max, z_max)
 
         for road_data in roads:
             vertices, faces = road_data.vertices, road_data.faces
@@ -536,11 +625,13 @@ class genRoad:
 
                 coords = ' '.join(
                     ['{} {} {}'.format(vertices[idx][0], vertices[idx][1], vertices[idx][2]) for idx in face])
+                coords += ' {} {} {}'.format(vertices[face[0]][0], vertices[face[0]][1], vertices[face[0]][2])
                 posList.text = coords
 
         return cityModel
 
-    def create_citygml_cityfurniture(self, devices):
+    def create_citygml_cityfurniture(self, devices, srs_name="http://www.opengis.net/def/crs/EPSG/0/30169",
+                                srsDimension="3"):
         nsmap = {
             'core': "http://www.opengis.net/citygml/2.0",
             'frn': "http://www.opengis.net/citygml/cityfurniture/2.0",
@@ -548,6 +639,20 @@ class genRoad:
         }
 
         cityModel = etree.Element("{http://www.opengis.net/citygml/2.0}CityModel", nsmap=nsmap)
+
+        total_vertices = []
+        for device in devices:
+            total_vertices.append(device.vertices)
+        total_vertices = np.vstack(total_vertices)
+        x_max, y_max, z_max = np.max(total_vertices, axis=0)
+        x_min, y_min, z_min = np.min(total_vertices, axis=0)
+        boundedBy = etree.SubElement(cityModel, "{http://www.opengis.net/gml}boundedBy")
+        Envelope = etree.SubElement(boundedBy, "{http://www.opengis.net/gml}Envelope", srsName=srs_name,
+                                    srsDimension=srsDimension)
+        lowerCorner = etree.SubElement(Envelope, "{http://www.opengis.net/gml}lowerCorner")
+        upperCorner = etree.SubElement(Envelope, "{http://www.opengis.net/gml}upperCorner")
+        lowerCorner.text = '{} {} {}'.format(x_min, y_min, z_min)
+        upperCorner.text = '{} {} {}'.format(x_max, y_max, z_max)
 
         for devices_data in devices:
             vertices, faces = devices_data.vertices, devices_data.faces
@@ -569,6 +674,7 @@ class genRoad:
 
                 coords = ' '.join(
                     ['{} {} {}'.format(vertices[idx][0], vertices[idx][1], vertices[idx][2]) for idx in face])
+                coords += ' {} {} {}'.format(vertices[face[0]][0], vertices[face[0]][1], vertices[face[0]][2])
                 posList.text = coords
 
         return cityModel
@@ -591,7 +697,7 @@ class genRoad:
             self.gen_device_lod1(self.roi_road)
         elif device_lod == 2:
             self.gen_device_lod2(self.roi_road)
-        road_ori=self.mesh_road.copy()
+        road_ori = self.mesh_road.copy()
         self.mesh_road += self.mesh_device
         self.add_relief(points_relief)
         if save_gml:
@@ -704,7 +810,8 @@ class genVegetation:
             tmp_vertices[:, 2] += z_points_interpolate[i] + 0.01
             tmp_mesh.vertices = tmp_vertices
 
-    def create_citygml_vegetation(self, vegetation):
+    def create_citygml_vegetation(self, vegetation, srs_name="http://www.opengis.net/def/crs/EPSG/0/30169",
+                                srsDimension="3"):
         nsmap = {
             'core': "http://www.opengis.net/citygml/2.0",
             'veg': "http://www.opengis.net/citygml/vegetation/2.0",
@@ -712,6 +819,20 @@ class genVegetation:
         }
 
         cityModel = etree.Element("{http://www.opengis.net/citygml/2.0}CityModel", nsmap=nsmap)
+
+        total_vertices = []
+        for tree in vegetation:
+            total_vertices.append(tree.vertices)
+        total_vertices = np.vstack(total_vertices)
+        x_max, y_max, z_max = np.max(total_vertices, axis=0)
+        x_min, y_min, z_min = np.min(total_vertices, axis=0)
+        boundedBy = etree.SubElement(cityModel, "{http://www.opengis.net/gml}boundedBy")
+        Envelope = etree.SubElement(boundedBy, "{http://www.opengis.net/gml}Envelope", srsName=srs_name,
+                                    srsDimension=srsDimension)
+        lowerCorner = etree.SubElement(Envelope, "{http://www.opengis.net/gml}lowerCorner")
+        upperCorner = etree.SubElement(Envelope, "{http://www.opengis.net/gml}upperCorner")
+        lowerCorner.text = '{} {} {}'.format(x_min, y_min, z_min)
+        upperCorner.text = '{} {} {}'.format(x_max, y_max, z_max)
 
         for vegetation_data in vegetation:
             vertices, faces = vegetation_data.vertices, vegetation_data.faces
@@ -732,11 +853,13 @@ class genVegetation:
 
                 coords = ' '.join(
                     ['{} {} {}'.format(vertices[idx][0], vertices[idx][1], vertices[idx][2]) for idx in face])
+                coords += ' {} {} {}'.format(vertices[face[0]][0], vertices[face[0]][1], vertices[face[0]][2])
                 posList.text = coords
 
         return cityModel
 
-    def gen_vege_run(self, limit_road, limit_bdg, x_min, y_min, width=200., height=200., points_relief=None, dense=None, lod_level=2,
+    def gen_vege_run(self, limit_road, limit_bdg, x_min, y_min, width=200., height=200., points_relief=None, dense=None,
+                     lod_level=2,
                      save_gml=True, gml_root=''):
         if not dense:
             dense = random.randint(50, 200)
@@ -843,15 +966,15 @@ def polygon_to_mesh_3D(polygon, height=3.):
 
     triangles = earcut(exterior_coords.flatten(), dim=2)
     faces_btm = np.reshape(triangles, (-1, 3))
+    faces_btm = np.hstack([faces_btm,faces_btm[:,0][:,None]])
 
     l_btm = len(vertices_btm)
     vertices_top = vertices_btm + [0., 0., height]
-    faces_top = faces_btm + [l_btm, l_btm, l_btm]
+    faces_top = faces_btm + [l_btm]*4
 
     faces_side = []
     for j in range(l_btm - 1):
-        faces_side += [[j, j + l_btm, j + l_btm + 1], [j, j + 1, j + l_btm + 1]]
-    faces_side += [[l_btm - 1, l_btm * 2 - 1, l_btm], [l_btm - 1, 0, l_btm]]
+        faces_side.append([j, j + l_btm, j + l_btm + 1, j + 1])
     faces_side = np.array(faces_side)
 
     vertices = np.vstack([vertices_btm, vertices_top])

@@ -43,8 +43,11 @@ python gen_mesh.py 1024 --lod_building 2 --prob_t1 0.2 --prob_t2 0.3 --prob_t3 0
 getation 2 --low_tree_ratio 0.1 --high_tree_ratio 1 --lod_device 2 --telegraph_pole_ratio 1 --traffic_light_ratio 0.1 --lod_relief 1 --output ./result
 ```
 
-Result (with relief)
+Result (with relief):
 ![with relief](./res_example/wt_relief_1024.jpg)
+
+CityGML(.gml) of building, LOD 2:
+![LOD2 Building](./res_example/gml_lod2_1024.jpg)
 
 Change the random seed, generate different scene:
 
@@ -53,7 +56,7 @@ python gen_mesh.py 1888 --lod_building 2 --prob_t1 0.2 --prob_t2 0.3 --prob_t3 0
 getation 2 --low_tree_ratio 0.1 --high_tree_ratio 1 --lod_device 2 --telegraph_pole_ratio 1 --traffic_light_ratio 0.1 --output ./result
 ```
 
-Result (without relief)
+Result (without relief):
 ![with relief](./res_example/wo_relief_1888.jpg)
 
 Example of Building/Vegetation/CityFurniture LOD=1:
@@ -61,8 +64,11 @@ Example of Building/Vegetation/CityFurniture LOD=1:
 python gen_mesh.py 1024 --lod_building 1 --storey_low 2 --storey_high 10 --lod_road 1 --road_width_main 1 --road_width_sub 0.1 --lod_vegetation 1 --low_tree_ratio 0.1 --high_tree_ratio 1 --lod_de
 vice 1 --telegraph_pole_ratio 1 --traffic_light_ratio 0.1 --output ./result
 ```
-Result (without relief)
+Result (without relief):
 ![with relief](./res_example/wo_relief_1024_lod1.jpg)
+
+CityGML(.gml) of building, LOD 1:
+![LOD1 Building](./res_example/gml_lod1_1024.jpg)
 
 Dataset
 ---------------------
