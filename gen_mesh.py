@@ -103,7 +103,9 @@ class genRelief:
         return cityModel
 
     def gen_relief_run(self, x_min, y_min, width=200., height=200., relief_lod=1, save_gml=True, gml_root=''):
-        if relief_lod == 1:
+        if relief_lod == 0:
+            pass
+        elif relief_lod == 1:
             self.gen_mesh_relief_lod1(x_min, y_min, width, height)
         if save_gml and relief_lod:
             relief_gml = self.create_citygml_relief([self.mesh_relief], relief_lod=1,
@@ -226,6 +228,23 @@ class genBuilding:
 
         return mesh
 
+    def gen_mesh_building_lod0(self, shp_polys, limit=None):
+        self.mesh_building = []
+        self.poly_building = []
+
+        shp_l = len(shp_polys)
+        for i in tqdm(range(shp_l)):
+            shp_poly = shp_polys[i]
+            if (limit is not None) and limit.intersection(shp_poly).any():
+                continue
+            self.poly_building.append(shp_poly)
+
+            tmp_mesh = polygon_to_mesh(shp_poly)
+            self.mesh_building.append(tmp_mesh)
+        self.building_limit = gpd.array.GeometryArray(np.array(self.poly_building))
+
+        return self.mesh_building
+
     def gen_mesh_building_lod1(self, shp_polys, limit=None):
         self.mesh_building = []
         self.poly_building = []
@@ -336,6 +355,29 @@ class genBuilding:
         lowerCorner.text = '{} {} {}'.format(x_min, y_min, z_min)
         upperCorner.text = '{} {} {}'.format(x_max, y_max, z_max)
 
+        if lod == 0:
+            for building_data in buildings:
+                vertices, faces = building_data.vertices, building_data.faces
+
+                building_member = etree.SubElement(cityModel, "{http://www.opengis.net/citygml/2.0}cityObjectMember")
+                building = etree.SubElement(building_member, "{http://www.opengis.net/citygml/building/2.0}Building")
+
+                lod0RoofEdge = etree.SubElement(building, "{http://www.opengis.net/citygml/building/2.0}lod0RoofEdge")
+                solid = etree.SubElement(lod0RoofEdge, "{http://www.opengis.net/gml}Solid")
+                exterior = etree.SubElement(solid, "{http://www.opengis.net/gml}exterior")
+                compositeSurface = etree.SubElement(exterior, "{http://www.opengis.net/gml}CompositeSurface")
+
+                for face in faces:
+                    surfaceMember = etree.SubElement(compositeSurface, "{http://www.opengis.net/gml}surfaceMember")
+                    polygon = etree.SubElement(surfaceMember, "{http://www.opengis.net/gml}Polygon")
+                    exterior = etree.SubElement(polygon, "{http://www.opengis.net/gml}exterior")
+                    linearRing = etree.SubElement(exterior, "{http://www.opengis.net/gml}LinearRing")
+                    posList = etree.SubElement(linearRing, "{http://www.opengis.net/gml}posList")
+
+                    coords = ' '.join(
+                        ['{} {} {}'.format(vertices[idx][0], vertices[idx][1], vertices[idx][2]) for idx in face])
+                    coords += ' {} {} {}'.format(vertices[face[0]][0], vertices[face[0]][1], vertices[face[0]][2])
+                    posList.text = coords
         if lod == 1:
             for building_data in buildings:
                 vertices, faces = building_data.vertices, building_data.faces
@@ -403,10 +445,12 @@ class genBuilding:
 
     def gen_building_run(self, building_lod=2, limit=None, points_relief=None, visualize=False, save_gml=True,
                          gml_root=''):
-        if building_lod == 1:
+        if building_lod == 0:
+            self.gen_mesh_building_lod0(self.roi_building, limit)
+        elif building_lod == 1:
             self.gen_mesh_building_lod1(self.roi_building, limit)
             self.set_building_storey()
-        if building_lod == 2:
+        elif building_lod == 2:
             self.gen_mesh_building_lod2(self.roi_building, self.probabilities, limit, visualize)
             if self.low_storey and self.high_storey:
                 self.set_building_storey()
@@ -493,6 +537,38 @@ class genRoad:
     def generate_poles_along_line(self, line, interval):
         length = line.length
         return [line.interpolate(distance) for distance in range(0, int(length), interval)]
+
+    def gen_device_lod0(self, shp):
+        self.mesh_device = []
+
+        left_sub = []
+        for tmp_road in shp:
+            if isinstance(tmp_road, LineString):
+                left_sub.append(
+                    tmp_road.parallel_offset(self.width * (1 + self.width_sub * 2 + 0.5), 'left'))
+            elif isinstance(tmp_road, MultiLineString):
+                for tmp_road_ in tmp_road.geoms:
+                    left_sub.append(
+                        tmp_road_.parallel_offset(self.width * (1 + self.width_sub * 2 + 0.5), 'left'))
+        self.road_limit = shp.buffer(self.width * (1 + self.width_sub * 2. + 0.5))
+        tele_pole_point = []
+        for tmp_road in left_sub:
+            tele_pole_point += self.generate_poles_along_line(tmp_road, 20)
+
+        for x in range(len(tele_pole_point)):
+            half_side = 0.1
+            tele_pole_point_xy = [tele_pole_point[x].x, tele_pole_point[x].y]
+            tele_pole_square_coords = [
+                (tele_pole_point_xy[0] - half_side, tele_pole_point_xy[1] - half_side),
+                (tele_pole_point_xy[0] - half_side, tele_pole_point_xy[1] + half_side),
+                (tele_pole_point_xy[0] + half_side, tele_pole_point_xy[1] + half_side),
+                (tele_pole_point_xy[0] + half_side, tele_pole_point_xy[1] - half_side)
+            ]
+
+            tele_pole_square = Polygon(tele_pole_square_coords)
+            tmp_mesh = polygon_to_mesh(tele_pole_square)
+            if not tele_pole_point[x].within(self.road_limit).any():
+                self.mesh_device.append(tmp_mesh)
 
     def gen_device_lod1(self, shp):
         self.mesh_device = []
@@ -690,10 +766,14 @@ class genRoad:
             tmp_mesh.vertices = tmp_vertices
 
     def gen_road_run(self, road_lod=1, device_lod=2, points_relief=None, save_gml=True, gml_root=''):
-        if road_lod == 1:
+        if road_lod == 0 or road_lod == 1:
+            self.gen_mesh_road(self.roi_road, self.width)
+        elif road_lod == 2:
             self.gen_mesh_road(self.roi_road, self.width)
             self.gen_mesh_road_sub(self.roi_road, self.width, self.width_sub)
-        if device_lod == 1:
+        if device_lod == 0:
+            self.gen_device_lod0(self.roi_road)
+        elif device_lod == 1:
             self.gen_device_lod1(self.roi_road)
         elif device_lod == 2:
             self.gen_device_lod2(self.roi_road)
@@ -722,6 +802,30 @@ class genVegetation:
         self.vege_root = vege_root
         self.low_ratio = low_ratio
         self.high_ratio = high_ratio
+
+    def gen_tree_mesh_lod0(self, limit_road, limit_bdg, x_min, y_min, width=200., height=200., dense=200):
+        self.mesh_tree = []
+        self.roi_rect = box(x_min, y_min, x_min + width, y_min + height)
+
+        limit_bdg = limit_bdg.buffer(3.)
+        limit_road = limit_road.buffer(3.)
+
+        tar_xy = np.array([[random.uniform(x_min, x_min + width) for _ in range(dense)],
+                           [random.uniform(y_min, y_min + width) for _ in range(dense)]]).T
+        tmp_idx = []
+        for i in range(len(tar_xy)):
+            if Point(tar_xy[i]).within(limit_road).any() or Point(tar_xy[i]).within(limit_bdg).any():
+                continue
+            else:
+                tmp_idx.append(i)
+        tar_xy = tar_xy[tmp_idx]
+
+        for i in range(len(tar_xy)):
+            tree_poly = Point(tar_xy[i]).buffer(random.uniform(1., 3.))
+            tree_height = random.uniform(6., 12.)
+
+            tmp_mesh = polygon_to_mesh(tree_poly)
+            self.mesh_tree.append(tmp_mesh)
 
     def gen_tree_mesh_lod1(self, limit_road, limit_bdg, x_min, y_min, width=200., height=200., dense=200):
         self.mesh_tree = []
@@ -863,7 +967,9 @@ class genVegetation:
                      save_gml=True, gml_root=''):
         if not dense:
             dense = random.randint(50, 200)
-        if lod_level == 1:
+        if lod_level == 0:
+            self.gen_tree_mesh_lod0(limit_road, limit_bdg, x_min, y_min, width, height, dense)
+        elif lod_level == 1:
             self.gen_tree_mesh_lod1(limit_road, limit_bdg, x_min, y_min, width, height, dense)
         elif lod_level == 2:
             self.gen_tree_mesh_lod2(limit_road, limit_bdg, x_min, y_min, width, height, dense)
