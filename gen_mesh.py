@@ -1138,7 +1138,7 @@ def arg():
     parser.add_argument("--prob_t4", help="probability of type 4, abnormal", type=float)
     parser.add_argument("--prob_t5", help="probability of type 5, slope1", type=float)
     parser.add_argument("--prob_t6", help="probability of type 6, slope2", type=float)
-    parser.add_argument("--prob_t7", help="probability of type 7, pure flat", type=float)
+    # parser.add_argument("--prob_t7", help="probability of type 7, pure flat", type=float)
 
     parser.add_argument("--lod_road", help="road lod", type=int)
     parser.add_argument("--road_width_low", help="low limit, width of road", type=float)
@@ -1175,7 +1175,7 @@ def main():
     prob_t4 = args.prob_t4
     prob_t5 = args.prob_t5
     prob_t6 = args.prob_t6
-    prob_t7 = args.prob_t7
+    prob_t7 = 0.
 
     lod_road = args.lod_road
     road_width_low = args.road_width_low
