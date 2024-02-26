@@ -29,6 +29,27 @@ class genRelief:
         self.points_relief = None
         self.mesh_relief = []
 
+    def gen_mesh_relief_lod0(self, x_min, y_min, width=200., height=200.):
+        l_path = len(self.relief_src_path)
+        rand_idx = random.randint(0, l_path - 1)
+        rand_dem_path = self.relief_src_path[rand_idx]
+
+        img = cv2.imread(rand_dem_path, 0)
+
+        h_img, w_img = img.shape
+        x, y = np.meshgrid(np.arange(w_img), np.arange(h_img))
+        coordinates = np.stack((x_min + x * width / (w_img - 1), y_min + y * height / (h_img - 1)), axis=-1)
+        points = np.concatenate([coordinates, img[..., None] / 255. * self.height_limit], axis=2)
+        points_reshape = np.reshape(points, (-1, 3))
+
+        points_2d = points_reshape[:, :2]
+        tri = Delaunay(points_2d)
+        faces = tri.simplices
+
+        self.mesh_relief0 = trimesh.Trimesh(vertices=points_reshape, faces=faces)
+        self.points_relief = points
+        return self.mesh_relief0
+
     def gen_mesh_relief_lod1(self, x_min, y_min, width=200., height=200.):
         l_path = len(self.relief_src_path)
         rand_idx = random.randint(0, l_path - 1)
@@ -76,41 +97,60 @@ class genRelief:
             relief_member = etree.SubElement(cityModel, "{http://www.opengis.net/citygml/2.0}cityObjectMember")
             reliefFeature = etree.SubElement(relief_member, "{http://www.opengis.net/citygml/relief/2.0}ReliefFeature")
 
-            lod1_1 = etree.SubElement(reliefFeature, "{http://www.opengis.net/citygml/relief/2.0}lod")
-            lod1_1.text = str(relief_lod)
-            reliefComponent = etree.SubElement(reliefFeature,
-                                               "{http://www.opengis.net/citygml/relief/2.0}reliefComponent")
-            TINRelief = etree.SubElement(reliefComponent, "{http://www.opengis.net/citygml/relief/2.0}TINRelief")
-            lod1_2 = etree.SubElement(TINRelief, "{http://www.opengis.net/citygml/relief/2.0}lod")
-            lod1_2.text = str(relief_lod)
-            tin = etree.SubElement(TINRelief, "{http://www.opengis.net/citygml/relief/2.0}tin")
-            triangulatedSurface = etree.SubElement(tin, "{http://www.opengis.net/gml}TriangulatedSurface",
-                                                   srsName=srs_name,
-                                                   srsDimension=srsDimension)
-            trianglePatches = etree.SubElement(triangulatedSurface, "{http://www.opengis.net/gml}trianglePatches")
+            if relief_lod==0:
+                lod1_1 = etree.SubElement(reliefFeature, "{http://www.opengis.net/citygml/relief/2.0}lod")
+                lod1_1.text = str(relief_lod)
+                reliefComponent = etree.SubElement(reliefFeature,
+                                                   "{http://www.opengis.net/citygml/relief/2.0}reliefComponent")
 
-            for face in faces:
-                polygon = etree.SubElement(trianglePatches, "{http://www.opengis.net/gml}Triangle")
-                exterior = etree.SubElement(polygon, "{http://www.opengis.net/gml}exterior")
-                linearRing = etree.SubElement(exterior, "{http://www.opengis.net/gml}LinearRing")
-                posList = etree.SubElement(linearRing, "{http://www.opengis.net/gml}posList")
+                for vertice in vertices:
+                    MassPointRelief = etree.SubElement(reliefComponent, "{http://www.opengis.net/gml}MassPointRelief")
+                    posList = etree.SubElement(MassPointRelief, "{http://www.opengis.net/gml}posList")
 
-                coords = ' '.join(
-                    ['{} {} {}'.format(vertices[idx][0], vertices[idx][1], vertices[idx][2]) for idx in face])
-                coords += ' {} {} {}'.format(vertices[face[0]][0], vertices[face[0]][1], vertices[face[0]][2])
-                posList.text = coords
+                    coords = '{} {} {}'.format(vertice[0], vertice[1], vertice[2])
+                    posList.text = coords
+
+            elif relief_lod==1:
+                lod1_1 = etree.SubElement(reliefFeature, "{http://www.opengis.net/citygml/relief/2.0}lod")
+                lod1_1.text = str(relief_lod)
+                reliefComponent = etree.SubElement(reliefFeature,
+                                                   "{http://www.opengis.net/citygml/relief/2.0}reliefComponent")
+                TINRelief = etree.SubElement(reliefComponent, "{http://www.opengis.net/citygml/relief/2.0}TINRelief")
+                lod1_2 = etree.SubElement(TINRelief, "{http://www.opengis.net/citygml/relief/2.0}lod")
+                lod1_2.text = str(relief_lod)
+                tin = etree.SubElement(TINRelief, "{http://www.opengis.net/citygml/relief/2.0}tin")
+                triangulatedSurface = etree.SubElement(tin, "{http://www.opengis.net/gml}TriangulatedSurface",
+                                                       srsName=srs_name,
+                                                       srsDimension=srsDimension)
+                trianglePatches = etree.SubElement(triangulatedSurface, "{http://www.opengis.net/gml}trianglePatches")
+
+                for face in faces:
+                    polygon = etree.SubElement(trianglePatches, "{http://www.opengis.net/gml}Triangle")
+                    exterior = etree.SubElement(polygon, "{http://www.opengis.net/gml}exterior")
+                    linearRing = etree.SubElement(exterior, "{http://www.opengis.net/gml}LinearRing")
+                    posList = etree.SubElement(linearRing, "{http://www.opengis.net/gml}posList")
+
+                    coords = ' '.join(
+                        ['{} {} {}'.format(vertices[idx][0], vertices[idx][1], vertices[idx][2]) for idx in face])
+                    coords += ' {} {} {}'.format(vertices[face[0]][0], vertices[face[0]][1], vertices[face[0]][2])
+                    posList.text = coords
 
         return cityModel
 
     def gen_relief_run(self, x_min, y_min, width=200., height=200., relief_lod=1, save_gml=True, gml_root=''):
         if relief_lod == 0:
-            pass
+            self.gen_mesh_relief_lod0(x_min, y_min, width, height)
         elif relief_lod == 1:
             self.gen_mesh_relief_lod1(x_min, y_min, width, height)
-        if save_gml and relief_lod:
-            relief_gml = self.create_citygml_relief([self.mesh_relief], relief_lod=1,
-                                                    srs_name="http://www.opengis.net/def/crs/EPSG/0/30169",
-                                                    srsDimension="3")
+        if save_gml:
+            if relief_lod==0:
+                relief_gml = self.create_citygml_relief([self.mesh_relief0], relief_lod=relief_lod,
+                                                        srs_name="http://www.opengis.net/def/crs/EPSG/0/30169",
+                                                        srsDimension="3")
+            elif relief_lod==1:
+                relief_gml = self.create_citygml_relief([self.mesh_relief], relief_lod=relief_lod,
+                                                        srs_name="http://www.opengis.net/def/crs/EPSG/0/30169",
+                                                        srsDimension="3")
             save_citygml(relief_gml, os.path.join(gml_root, 'relief.gml'))
             return self.mesh_relief
 
@@ -1138,7 +1178,7 @@ def arg():
     parser.add_argument("--prob_t4", help="probability of type 4, abnormal", type=float)
     parser.add_argument("--prob_t5", help="probability of type 5, slope1", type=float)
     parser.add_argument("--prob_t6", help="probability of type 6, slope2", type=float)
-    # parser.add_argument("--prob_t7", help="probability of type 7, pure flat", type=float)
+    parser.add_argument("--prob_t7", help="probability of type 7, pure flat", type=float)
 
     parser.add_argument("--lod_road", help="road lod", type=int)
     parser.add_argument("--road_width_low", help="low limit, width of road", type=float)
@@ -1175,7 +1215,7 @@ def main():
     prob_t4 = args.prob_t4
     prob_t5 = args.prob_t5
     prob_t6 = args.prob_t6
-    prob_t7 = 0.
+    prob_t7 = args.prob_t7
 
     lod_road = args.lod_road
     road_width_low = args.road_width_low
