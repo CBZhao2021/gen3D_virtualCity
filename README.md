@@ -22,6 +22,7 @@ python gen_mesh.py <random_seed ∈ [0, 65535] (int)> \
 --prob_t4 <prob_t4 ∈ [0., 1.]> \
 --prob_t5 <prob_t5 ∈ [0., 1.]> \
 --prob_t6 <prob_t6 ∈ [0., 1.]> \
+--prob_t7 <prob_t6 ∈ [0., 1.]> \
 --lod_road <lod_road (1)> \
 --road_width_main <road_width_main (float)> \
 --road_width_sub <road_width_sub (float)> \
@@ -38,7 +39,7 @@ python gen_mesh.py <random_seed ∈ [0, 65535] (int)> \
 Command instance:
 
 ```
-python gen_mesh.py 1024 --lod_building 2 --prob_t1 0.2 --prob_t2 0.3 --prob_t3 0.3 --prob_t4 0 --prob_t5 0.2 --prob_t6 0 --lod_road 1 --road_width_main 1 --road_width_sub 0.1 --lod_vegetation 2 --low_tree_ratio 0.1 --high_tree_ratio 1 --lod_device 2 --telegraph_pole_ratio 1 --traffic_light_ratio 0.1 --lod_relief 1 --output ./result
+python gen_mesh.py 1024 --lod_building 2 --prob_t1 0.2 --prob_t2 0.3 --prob_t3 0.3 --prob_t4 0 --prob_t5 0.2 --prob_t6 0 --prob_t7 0 --lod_road 1 --road_width_main 1 --road_width_sub 0.1 --lod_vegetation 2 --low_tree_ratio 0.1 --high_tree_ratio 1 --lod_device 2 --telegraph_pole_ratio 1 --traffic_light_ratio 0.1 --lod_relief 1 --output ./result
 ```
 
 Result (with relief):
@@ -50,7 +51,7 @@ CityGML(.gml) of building, LOD 2:
 Change the random seed, generate different scene:
 
 ```
-python gen_mesh.py 1888 --lod_building 2 --prob_t1 0.2 --prob_t2 0.3 --prob_t3 0.3 --prob_t4 0 --prob_t5 0.2 --prob_t6 0 --lod_road 1 --road_width_main 1 --road_width_sub 0.1 --lod_vegetation 2 --low_tree_ratio 0.1 --high_tree_ratio 1 --lod_device 2 --telegraph_pole_ratio 1 --traffic_light_ratio 0.1 --output ./result
+python gen_mesh.py 1888 --lod_building 2 --prob_t1 0.2 --prob_t2 0.3 --prob_t3 0.3 --prob_t4 0 --prob_t5 0.2 --prob_t6 0 --prob_t7 0 --lod_road 1 --road_width_main 1 --road_width_sub 0.1 --lod_vegetation 2 --low_tree_ratio 0.1 --high_tree_ratio 1 --lod_device 2 --telegraph_pole_ratio 1 --traffic_light_ratio 0.1 --output ./result
 ```
 
 Result (without relief):
