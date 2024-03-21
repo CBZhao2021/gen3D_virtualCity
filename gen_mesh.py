@@ -98,7 +98,7 @@ class genRelief:
             relief_member = etree.SubElement(cityModel, "{http://www.opengis.net/citygml/2.0}cityObjectMember")
             reliefFeature = etree.SubElement(relief_member, "{http://www.opengis.net/citygml/relief/2.0}ReliefFeature")
 
-            if relief_lod==0:
+            if relief_lod == 0:
                 lod1_1 = etree.SubElement(reliefFeature, "{http://www.opengis.net/citygml/relief/2.0}lod")
                 lod1_1.text = str(relief_lod)
                 reliefComponent = etree.SubElement(reliefFeature,
@@ -111,7 +111,7 @@ class genRelief:
                     coords = '{} {} {}'.format(vertice[0], vertice[1], vertice[2])
                     posList.text = coords
 
-            elif relief_lod==1:
+            elif relief_lod == 1:
                 lod1_1 = etree.SubElement(reliefFeature, "{http://www.opengis.net/citygml/relief/2.0}lod")
                 lod1_1.text = str(relief_lod)
                 reliefComponent = etree.SubElement(reliefFeature,
@@ -144,11 +144,11 @@ class genRelief:
         elif relief_lod == 1:
             self.gen_mesh_relief_lod1(x_min, y_min, width, height)
         if save_gml:
-            if relief_lod==0:
+            if relief_lod == 0:
                 relief_gml = self.create_citygml_relief([self.mesh_relief0], relief_lod=relief_lod,
                                                         srs_name="http://www.opengis.net/def/crs/EPSG/0/30169",
                                                         srsDimension="3")
-            elif relief_lod==1:
+            elif relief_lod == 1:
                 relief_gml = self.create_citygml_relief([self.mesh_relief], relief_lod=relief_lod,
                                                         srs_name="http://www.opengis.net/def/crs/EPSG/0/30169",
                                                         srsDimension="3")
@@ -699,7 +699,7 @@ class genRoad:
         self.mesh_device += res_tele_pole + res_traf_light
 
     def create_citygml_road(self, roads, srs_name="http://www.opengis.net/def/crs/EPSG/0/30169",
-                                srsDimension="3"):
+                            srsDimension="3"):
         nsmap = {
             'core': "http://www.opengis.net/citygml/2.0",
             'tran': "http://www.opengis.net/citygml/transportation/2.0",
@@ -748,7 +748,7 @@ class genRoad:
         return cityModel
 
     def create_citygml_cityfurniture(self, devices, srs_name="http://www.opengis.net/def/crs/EPSG/0/30169",
-                                srsDimension="3"):
+                                     srsDimension="3"):
         nsmap = {
             'core': "http://www.opengis.net/citygml/2.0",
             'frn': "http://www.opengis.net/citygml/cityfurniture/2.0",
@@ -822,8 +822,8 @@ class genRoad:
 
         feat_color_road = (253, 253, 230, 30)
         feat_color_device = (240, 128, 128, 255)
-        self.mesh_road = obj_color(self.mesh_road,feat_color_road)
-        self.mesh_device = obj_color(self.mesh_device,feat_color_device)
+        self.mesh_road = obj_color(self.mesh_road, feat_color_road)
+        self.mesh_device = obj_color(self.mesh_device, feat_color_device)
 
         self.mesh_road += self.mesh_device
         self.add_relief(points_relief)
@@ -962,7 +962,7 @@ class genVegetation:
             tmp_mesh.vertices = tmp_vertices
 
     def create_citygml_vegetation(self, vegetation, srs_name="http://www.opengis.net/def/crs/EPSG/0/30169",
-                                srsDimension="3"):
+                                  srsDimension="3"):
         nsmap = {
             'core': "http://www.opengis.net/citygml/2.0",
             'veg': "http://www.opengis.net/citygml/vegetation/2.0",
@@ -1119,11 +1119,11 @@ def polygon_to_mesh_3D(polygon, height=3.):
 
     triangles = earcut(exterior_coords.flatten(), dim=2)
     faces_btm = np.reshape(triangles, (-1, 3))
-    faces_btm = np.hstack([faces_btm,faces_btm[:,0][:,None]])
+    faces_btm = np.hstack([faces_btm, faces_btm[:, 0][:, None]])
 
     l_btm = len(vertices_btm)
     vertices_top = vertices_btm + [0., 0., height]
-    faces_top = faces_btm + [l_btm]*4
+    faces_top = faces_btm + [l_btm] * 4
 
     faces_side = []
     for j in range(l_btm - 1):
@@ -1177,6 +1177,7 @@ def obj_color(mesh_list, feat_color):
         mesh_list[x] = trimesh.Trimesh(vertices=mesh_list[x].vertices, faces=mesh_list[x].faces,
                                        visual=color_visuals, validate=True, process=False)
     return mesh_list
+
 
 def save_citygml(root, file_name):
     tree = etree.ElementTree(root)
@@ -1292,12 +1293,20 @@ def main():
     feat_color_vege = (137, 179, 95, 255)
     feat_color_relief = (53, 53, 53, 255)
 
+    for x in range(len(mesh_building)):
+        tmp_face = mesh_building[x].faces.copy()
+        mesh_building[x].faces = np.hstack([tmp_face, tmp_face[:, ::-1]])
+
+    for x in range(len(mesh_road)):
+        mesh_road[x].vertices[:, 2] += 1.
+        tmp_face = mesh_road[x].faces.copy()
+        mesh_road[x].faces = np.hstack([tmp_face, tmp_face[:, ::-1]])
+
     mesh_building = obj_color(mesh_building, feat_color_bldg)
     mesh_vege = obj_color(mesh_vege, feat_color_vege)
     mesh_relief = obj_color([mesh_relief], feat_color_relief)
 
-    for x in range(len(mesh_road)):
-        mesh_road[x].vertices[:,2]+=1.
+
 
     res = mesh_relief + mesh_building + mesh_road + mesh_vege
     combined_mesh = trimesh.util.concatenate(res)
@@ -1309,7 +1318,8 @@ def main():
 
 if __name__ == "__main__":
     import time
-    s=time.time()
+
+    s = time.time()
     main()
-    e=time.time()
-    print(e-s)
+    e = time.time()
+    print(e - s)
