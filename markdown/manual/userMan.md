@@ -33,6 +33,8 @@ http://gen3d.sekilab.global/
 
 ## 5 生成結果可視化
 
+![vis_output](../resources/userMan/fig06.png)
+
 ①設定内容を確認できます。
 ②可視化：ツール内で直接生成された3D都市モデルを閲覧（ズーム，回転）できます。
 

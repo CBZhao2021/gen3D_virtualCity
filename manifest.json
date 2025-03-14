@@ -335,6 +335,16 @@
     },
     {
       "type": "Resource",
+      "source_relative_path": "resources/userMan/fig06.png",
+      "output": {
+        "resource": {
+          "relative_path": "resources/userMan/fig06.png"
+        }
+      },
+      "version": ""
+    },
+    {
+      "type": "Resource",
       "source_relative_path": "resources/userMan/tutorial_006.png",
       "output": {
         "resource": {
