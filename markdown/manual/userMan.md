@@ -27,7 +27,7 @@ http://gen3d.sekilab.global/
 
 ## 4 三次元都市モデル生成
 
-衛星画像 (.tif) を入力し、生成するLoDを設定します。実行は約10-15分かかります。
+衛星画像 (.tif) を入力し、生成するLoDを設定します。実行には約10-15分かかります。
 
 ![set_lod_input](../resources/userMan/fig05.png)
 
